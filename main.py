@@ -4,7 +4,7 @@ import requests
 
 app = FastAPI()
 
-# Permite que o seu app Flutter acesse o servidor sem bloqueios de segurança
+# Isso evita erros de segurança quando o celular tenta falar com o servidor
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,14 +19,16 @@ HEADERS = {
 
 @app.get("/")
 def home():
-    return {"status": "SmartLotto API Online"}
+    return {"status": "SmartLotto API Online", "projeto": "Unilab 4 Semestre"}
 
 @app.get("/resultado/{modalidade}")
 def get_resultado(modalidade: str):
-    # O servidor vai buscar na Caixa por você
+    # O Python agora busca QUALQUER modalidade que você pedir
     url = f"https://servicebus2.caixa.gov.br/portalloterias/api/{modalidade}"
     try:
         response = requests.get(url, headers=HEADERS, timeout=15)
-        return response.json()
+        if response.status_code == 200:
+            return response.json() # Retorna TUDO (incluindo trevos e times)
+        return {"error": f"Caixa retornou status {response.status_code}"}
     except Exception as e:
         return {"error": str(e)}
