@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+from typing import Optional, List, Dict, Any
 
-app = FastAPI()
+app = FastAPI(title="SmartLotto API v3.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -11,47 +12,70 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Rota para saber se o servidor acordou
+# ====================== ROTAS ======================
+
 @app.get("/")
 def check_status():
-    return {"status": "SmartLotto API v3.0 - Full History", "owner": "Joao"}
+    return {"status": "SmartLotto API v3.1 - Melhorada", "owner": "Joao"}
 
-# Rota Única Inteligente: Busca último ou histórico
+# Rota principal melhorada
 @app.get("/resultado/{loteria}")
-def get_dados(loteria: str, tipo: str = "ultimo"):
-    slug = loteria.lower().replace("-", "")
-    
-    # Se pedir 'ultimo', busca o sorteio mais recente
-    # Se pedir 'historico', a API comunitária retorna a lista de todos
-    suffix = "/latest" if tipo == "ultimo" else ""
-    url = f"https://loteriascaixa-api.herokuapp.com/api/{slug}{suffix}"
-    
+def get_resultado(
+    loteria: str,
+    tipo: str = "ultimo",           # ultimo ou historico
+    concurso: Optional[int] = None   # para buscar concurso específico
+):
+    slug = loteria.lower().replace("-", "").replace(" ", "")
+
+    # Monta a URL da fonte externa
+    if concurso:
+        url = f"https://loteriascaixa-api.herokuapp.com/api/{slug}/{concurso}"
+    elif tipo == "historico":
+        url = f"https://loteriascaixa-api.herokuapp.com/api/{slug}"
+    else:
+        url = f"https://loteriascaixa-api.herokuapp.com/api/{slug}/latest"
+
     try:
         response = requests.get(url, timeout=30)
-        if response.status_code == 200:
-            dados = response.json()
-            
-            # Se for uma lista (histórico), mapeia cada item
-            if isinstance(dados, list):
-                return [_mapear_json(item) for item in dados]
-            
-            # Se for objeto único (último resultado)
-            return _mapear_json(dados)
-            
-        return {"error": f"Fonte externa retornou {response.status_code}"}
-    except Exception as e:
-        return {"error": str(e)}
+        
+        if response.status_code != 200:
+            return {"error": f"Fonte externa retornou {response.status_code}"}
 
-# Função de limpeza: Deixa o JSON mastigadinho para o seu Flutter
-def _mapear_json(d):
+        dados = response.json()
+
+        # Se for lista (histórico completo)
+        if isinstance(dados, list):
+            return [_mapear_json_completo(item) for item in dados]
+
+        # Se for resultado único
+        return _mapear_json_completo(dados)
+
+    except Exception as e:
+        return {"error": f"Erro ao buscar dados: {str(e)}"}
+
+
+# ====================== FUNÇÃO DE MAPEAMENTO MELHORADA ======================
+
+def _mapear_json_completo(d: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "concurso": d.get("concurso"),
-        "dataApuracao": d.get("data"),
-        "listaDezenas": d.get("dezenas"),
+        "dataApuracao": d.get("data") or d.get("dataApuracao"),
+        "listaDezenas": d.get("dezenas") or d.get("listaDezenas"),
+        
+        # Premiação e acumulação
         "valorEstimadoProximoConcurso": d.get("valorEstimadoPróximoConcurso") or d.get("estimativa") or 0.0,
         "valorAcumuladoProximoConcurso": d.get("valorAcumuladoPróximoConcurso") or 0.0,
+        
+        # Locais dos ganhadores (o que você pediu)
+        "localGanhadores": d.get("localGanhadores") or d.get("cidades") or [],
+        
+        # Informações extras
+        "listaRateio": d.get("premiacoes") or d.get("listaRateio") or [],
         "listaTrevos": d.get("trevos"),
         "nomeTimeCoracao": d.get("timeCoracao"),
         "nomeMesSorte": d.get("mesSorte"),
-        "listaRateio": d.get("premiacoes")
+        
+        # Campos adicionais úteis
+        "acumulou": d.get("acumulou", False),
+        "valorArrecadado": d.get("valorArrecadado", 0),
     }
