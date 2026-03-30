@@ -56,26 +56,28 @@ def get_resultado(
 
 # ====================== FUNÇÃO DE MAPEAMENTO MELHORADA ======================
 
-def _mapear_json_completo(d: Dict[str, Any]) -> Dict[str, Any]:
+def _mapear_json_completo(d: dict) -> dict:
     return {
         "concurso": d.get("concurso"),
         "dataApuracao": d.get("data") or d.get("dataApuracao"),
-        "listaDezenas": d.get("dezenas") or d.get("listaDezenas"),
+        "listaDezenas": d.get("dezenas") or d.get("listaDezenas") or [],
         
-        # Premiação e acumulação
-        "valorEstimadoProximoConcurso": d.get("valorEstimadoPróximoConcurso") or d.get("estimativa") or 0.0,
-        "valorAcumuladoProximoConcurso": d.get("valorAcumuladoPróximoConcurso") or 0.0,
+        # Premiação
+        "valorEstimadoProximoConcurso": float(d.get("valorEstimadoPróximoConcurso") or d.get("estimativa") or 0.0),
+        "valorAcumuladoProximoConcurso": float(d.get("valorAcumuladoPróximoConcurso") or 0.0),
         
-        # Locais dos ganhadores (o que você pediu)
+        # Locais dos ganhadores (melhorado)
         "localGanhadores": d.get("localGanhadores") or d.get("cidades") or [],
         
-        # Informações extras
+        # Rateio (premiações)
         "listaRateio": d.get("premiacoes") or d.get("listaRateio") or [],
-        "listaTrevos": d.get("trevos"),
+        
+        # Extras
+        "listaTrevos": d.get("trevos") or [],
         "nomeTimeCoracao": d.get("timeCoracao"),
         "nomeMesSorte": d.get("mesSorte"),
         
-        # Campos adicionais úteis
+        # Campos booleanos e totais
         "acumulou": d.get("acumulou", False),
-        "valorArrecadado": d.get("valorArrecadado", 0),
+        "valorArrecadado": float(d.get("valorArrecadado") or 0.0),
     }
