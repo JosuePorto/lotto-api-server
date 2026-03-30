@@ -1,10 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import requests
-from typing import Optional, Dict, Any
-import time
+from typing import Optional
 
-app = FastAPI(title="SmartLotto API v3.3 - Mais Robusta")
+app = FastAPI(title="SmartLotto API v3.5 - Inteligente")
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,52 +12,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-cache = {}
-CACHE_DURATION = 180  # 3 minutos
-
 @app.get("/")
 def check_status():
-    return {"status": "SmartLotto API v3.3 - Robusta", "owner": "Joao"}
+    return {"status": "SmartLotto API v3.5 - Inteligente", "owner": "Joao"}
 
 @app.get("/resultado/{loteria}")
-def get_resultado(loteria: str, tipo: str = "ultimo", concurso: Optional[int] = None):
+def get_resultado(loteria: str):
     slug = loteria.lower().replace("-", "").replace(" ", "")
 
-    cache_key = f"{slug}_{tipo}_{concurso or 'ultimo'}"
-    if cache_key in cache and time.time() - cache[cache_key]['time'] < CACHE_DURATION:
-        return cache[cache_key]['data']
-
+    # Fontes em ordem de prioridade
     sources = [
-        ("guidi", f"https://api.guidi.dev.br/loteria/{slug}/ultimo"),
-        ("caixa", f"https://loteriascaixa-api.herokuapp.com/api/{slug}/latest"),
+        f"https://api.guidi.dev.br/loteria/{slug}/ultimo",
+        f"https://loteriascaixa-api.herokuapp.com/api/{slug}/latest",
+        f"https://loteriascaixa-api.herokuapp.com/api/{slug}",
     ]
 
-    for source_name, url in sources:
+    for url in sources:
         try:
-            response = requests.get(url, timeout=20)
-            if response.status_code == 200:
-                data = response.json()
-                mapped = _mapear_json_completo(data) if not isinstance(data, list) else [_mapear_json_completo(d) for d in data[-80:]]
+            r = requests.get(url, timeout=20)
+            if r.status_code == 200:
+                data = r.json()
                 
-                cache[cache_key] = {'data': mapped, 'time': time.time()}
-                return mapped
-        except Exception as e:
-            print(f"[{source_name}] Falhou para {slug}: {e}")
+                # Se for lista, pega o último
+                if isinstance(data, list) and data:
+                    data = data[-1]
+
+                # Mapeamento inteligente
+                return {
+                    "concurso": data.get("concurso") or data.get("numero"),
+                    "dataApuracao": data.get("data") or data.get("dataApuracao") or data.get("data_sorteio"),
+                    "listaDezenas": data.get("dezenas") or data.get("listaDezenas") or data.get("numeros") or [],
+                    "listaDezenas2": data.get("dezenas2") or [],
+                    "valorEstimadoProximoConcurso": float(data.get("valorEstimadoPróximoConcurso") or data.get("estimativa") or 0),
+                    "valorAcumuladoProximoConcurso": float(data.get("valorAcumuladoProximoConcurso") or 0),
+                    "localGanhadores": data.get("localGanhadores") or data.get("cidades") or [],
+                    "listaRateio": data.get("premiacoes") or data.get("listaRateio") or [],
+                    "acumulou": data.get("acumulou", len(data.get("listaRateio", [])) == 0),
+                }
+        except:
             continue
 
-    return {"error": f"Não foi possível obter resultado para {loteria}. Ambas fontes falharam."}
-
-
-def _mapear_json_completo(d: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "concurso": d.get("concurso"),
-        "dataApuracao": d.get("data") or d.get("dataApuracao"),
-        "listaDezenas": d.get("dezenas") or d.get("listaDezenas") or [],
-        "listaDezenas2": d.get("dezenas2") or [],
-        "valorEstimadoProximoConcurso": float(d.get("valorEstimadoPróximoConcurso") or d.get("estimativa") or 0),
-        "valorAcumuladoProximoConcurso": float(d.get("valorAcumuladoProximoConcurso") or 0),
-        "localGanhadores": d.get("localGanhadores") or d.get("cidades") or [],
-        "listaRateio": d.get("premiacoes") or d.get("listaRateio") or [],
-        "acumulou": d.get("acumulou", False),
-        "valorArrecadado": float(d.get("valorArrecadado") or 0),
-    }
+    return {"error": f"Não foi possível obter resultado para {loteria}. Tente novamente mais tarde."}
