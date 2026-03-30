@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import requests
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
-app = FastAPI(title="SmartLotto API v3.1")
+app = FastAPI(title="SmartLotto API v3.1 - Melhorada")
 
 app.add_middleware(
     CORSMiddleware,
@@ -12,72 +12,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ====================== ROTAS ======================
-
 @app.get("/")
 def check_status():
     return {"status": "SmartLotto API v3.1 - Melhorada", "owner": "Joao"}
 
-# Rota principal melhorada
 @app.get("/resultado/{loteria}")
 def get_resultado(
     loteria: str,
-    tipo: str = "ultimo",           # ultimo ou historico
-    concurso: Optional[int] = None   # para buscar concurso específico
+    tipo: str = "ultimo",
+    concurso: Optional[int] = None
 ):
     slug = loteria.lower().replace("-", "").replace(" ", "")
 
-    # Monta a URL da fonte externa
-    if concurso:
+    # Monta URL da fonte externa
+    if concurso is not None:
         url = f"https://loteriascaixa-api.herokuapp.com/api/{slug}/{concurso}"
-    elif tipo == "historico":
-        url = f"https://loteriascaixa-api.herokuapp.com/api/{slug}"
+    elif tipo.lower() == "historico":
+        url = f"https://loteriascaixa-api.herokuapp.com/api/{slug}"   # pode falhar
     else:
         url = f"https://loteriascaixa-api.herokuapp.com/api/{slug}/latest"
 
     try:
-        response = requests.get(url, timeout=30)
+        response = requests.get(url, timeout=35)
         
         if response.status_code != 200:
             return {"error": f"Fonte externa retornou {response.status_code}"}
 
         dados = response.json()
 
-        # Se for lista (histórico completo)
         if isinstance(dados, list):
-            return [_mapear_json_completo(item) for item in dados]
+            # Limita para evitar resposta gigante
+            return [_mapear_json_completo(item) for item in dados[-50:]]  # últimos 50 concursos
 
-        # Se for resultado único
         return _mapear_json_completo(dados)
 
     except Exception as e:
-        return {"error": f"Erro ao buscar dados: {str(e)}"}
+        return {"error": f"Erro na requisição: {str(e)}"}
 
 
-# ====================== FUNÇÃO DE MAPEAMENTO MELHORADA ======================
-
-def _mapear_json_completo(d: dict) -> dict:
+def _mapear_json_completo(d: dict):
     return {
         "concurso": d.get("concurso"),
         "dataApuracao": d.get("data") or d.get("dataApuracao"),
         "listaDezenas": d.get("dezenas") or d.get("listaDezenas") or [],
         
-        # Premiação
-        "valorEstimadoProximoConcurso": float(d.get("valorEstimadoPróximoConcurso") or d.get("estimativa") or 0.0),
-        "valorAcumuladoProximoConcurso": float(d.get("valorAcumuladoPróximoConcurso") or 0.0),
+        "valorEstimadoProximoConcurso": float(d.get("valorEstimadoPróximoConcurso") or d.get("estimativa") or 0),
+        "valorAcumuladoProximoConcurso": float(d.get("valorAcumuladoPróximoConcurso") or 0),
         
-        # Locais dos ganhadores (melhorado)
-        "localGanhadores": d.get("localGanhadores") or d.get("cidades") or [],
+        # Local dos ganhadores (campo que você quer)
+        "localGanhadores": d.get("localGanhadores") or d.get("cidades") or d.get("ganhadoresPorLocal") or [],
         
-        # Rateio (premiações)
         "listaRateio": d.get("premiacoes") or d.get("listaRateio") or [],
         
-        # Extras
         "listaTrevos": d.get("trevos") or [],
         "nomeTimeCoracao": d.get("timeCoracao"),
         "nomeMesSorte": d.get("mesSorte"),
         
-        # Campos booleanos e totais
         "acumulou": d.get("acumulou", False),
-        "valorArrecadado": float(d.get("valorArrecadado") or 0.0),
+        "valorArrecadado": float(d.get("valorArrecadado") or 0),
     }
